@@ -1,0 +1,27 @@
+name: "WhatsApp Bridge Baileys"
+version: "2.0.2"
+slug: "ha-wa-bridge-baileys"
+description: "WhatsApp Web Bridge for Home Assistant"
+url: "https://github.com/raulpetruta/ha-wa-bridge"
+arch:
+  - aarch64
+  - amd64
+  - armv7
+startup: application
+boot: auto
+map:
+  - config: rw
+options:
+  detect_own_messages: false
+  incoming_messages_mode: "all"
+  incoming_message_log_level: "FULL"
+  allowed_groups: []
+  allowed_numbers: []
+schema:
+  detect_own_messages: bool
+  incoming_messages_mode: "match(all|disabled|groups_only|numbers_only)"
+  incoming_message_log_level: "match(FULL|COMPACT|NONE)"
+  allowed_groups: [str]
+  allowed_numbers: [str]
+ports:
+  3000/tcp: 3000
