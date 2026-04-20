@@ -2,23 +2,23 @@ services:
   # ── Option A: original bridge (whatsapp-web.js + Puppeteer + Chromium) ──────
   # This is the default / production service.  Comment it out and uncomment
   # Option B below to switch to the lighter Baileys runtime.
-  wa-bridge:
-    # Build locally for testing, or pull from GHCR
-    build: ./wa-bridge
-    image: ghcr.io/raulpetruta/ha-whatsapp-bridge:latest
-    container_name: ha-whatsapp-bridge
-    restart: unless-stopped
-    ports:
-      - "3000:3000"
-    volumes:
-      - ./wa-bridge/.wwebjs_auth:/usr/src/app/.wwebjs_auth
-      - ./wa-bridge/.wwebjs_cache:/usr/src/app/.wwebjs_cache
-    environment:
-      - PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
-      - PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
-      - DETECT_OWN_MESSAGES=true # Set to true to allow the bridge to detect and broadcast messages sent by your own authenticated WhatsApp account
-      - INCOMING_MESSAGES_MODE=all # Set to 'all' to allow all messages, or 'numbers_only' to allow only messages from specific numbers, or 'groups_only' to allow only messages from specific groups
-      - INCOMING_MESSAGE_LOG_LEVEL=FULL # FULL = log entire payload (default), COMPACT = sender & type only, NONE = no incoming message logs
+#  wa-bridge:
+#    # Build locally for testing, or pull from GHCR
+#    build: ./wa-bridge
+#    image: ghcr.io/raulpetruta/ha-whatsapp-bridge:latest
+#    container_name: ha-whatsapp-bridge
+#    restart: unless-stopped
+#    ports:
+#      - "3000:3000"
+#    volumes:
+#      - ./wa-bridge/.wwebjs_auth:/usr/src/app/.wwebjs_auth
+#      - ./wa-bridge/.wwebjs_cache:/usr/src/app/.wwebjs_cache
+#    environment:
+#      - PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
+#      - PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
+#      - DETECT_OWN_MESSAGES=true # Set to true to allow the bridge to detect and broadcast messages sent by your own authenticated WhatsApp account
+#      - INCOMING_MESSAGES_MODE=all # Set to 'all' to allow all messages, or 'numbers_only' to allow only messages from specific numbers, or 'groups_only' to allow only messages from specific groups
+#      - INCOMING_MESSAGE_LOG_LEVEL=FULL # FULL = log entire payload (default), COMPACT = sender & type only, NONE = no incoming message logs
       # - ALLOWED_NUMBERS=40741234567 # Set to allow only messages from specific numbers
       # - ALLOWED_GROUPS=Family Group,Work Team # Set to allow only messages from specific groups
 
@@ -28,17 +28,17 @@ services:
   # Limitation: send_event (WhatsApp Scheduled Events) is not yet supported.
   #
   # To use: comment out the wa-bridge service above, then uncomment below.
-  # wa-bridge-baileys:
-  #   build: ./wa-bridge-baileys
-  #   container_name: ha-whatsapp-bridge
-  #   restart: unless-stopped
-  #   ports:
-  #     - "3000:3000"
-  #   volumes:
-  #     - ./wa-bridge-baileys/.baileys_data:/usr/src/app/.baileys_data
-  #   environment:
-  #     - DETECT_OWN_MESSAGES=false
-  #     - INCOMING_MESSAGES_MODE=all
-  #     - INCOMING_MESSAGE_LOG_LEVEL=FULL
-  #     # - ALLOWED_NUMBERS=40741234567
-  #     # - ALLOWED_GROUPS=Family Group,Work Team
+  wa-bridge-baileys:
+    build: ./wa-bridge-baileys
+    container_name: ha-whatsapp-bridge
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./wa-bridge-baileys/.baileys_data:/usr/src/app/.baileys_data
+    environment:
+      - DETECT_OWN_MESSAGES=false
+      - INCOMING_MESSAGES_MODE=all
+      - INCOMING_MESSAGE_LOG_LEVEL=FULL
+      # - ALLOWED_NUMBERS=40741234567
+      # - ALLOWED_GROUPS=Family Group,Work Team
