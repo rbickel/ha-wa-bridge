@@ -1,0 +1,19 @@
+{
+  "name": "ha-wa-bridge-baileys",
+  "version": "1.0.0",
+  "description": "WhatsApp Baileys bridge for Home Assistant – no browser required",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "@whiskeysockets/baileys": "7.0.0-rc.9",
+    "pino": "^9.6.0",
+    "qrcode": "^1.5.4",
+    "ws": "^8.19.0"
+  }
+}

@@ -1,4 +1,7 @@
 services:
+  # ── Option A: original bridge (whatsapp-web.js + Puppeteer + Chromium) ──────
+  # This is the default / production service.  Comment it out and uncomment
+  # Option B below to switch to the lighter Baileys runtime.
   wa-bridge:
     # Build locally for testing, or pull from GHCR
     build: ./wa-bridge
@@ -18,3 +21,24 @@ services:
       - INCOMING_MESSAGE_LOG_LEVEL=FULL # FULL = log entire payload (default), COMPACT = sender & type only, NONE = no incoming message logs
       # - ALLOWED_NUMBERS=40741234567 # Set to allow only messages from specific numbers
       # - ALLOWED_GROUPS=Family Group,Work Team # Set to allow only messages from specific groups
+
+  # ── Option B: Baileys bridge (no Puppeteer / no Chromium) ───────────────────
+  # Prototype – same WebSocket API as Option A so HA integration works with
+  # either service.  No browser process means substantially lower RAM usage.
+  # Limitation: send_event (WhatsApp Scheduled Events) is not yet supported.
+  #
+  # To use: comment out the wa-bridge service above, then uncomment below.
+  # wa-bridge-baileys:
+  #   build: ./wa-bridge-baileys
+  #   container_name: ha-whatsapp-bridge
+  #   restart: unless-stopped
+  #   ports:
+  #     - "3000:3000"
+  #   volumes:
+  #     - ./wa-bridge-baileys/.baileys_data:/usr/src/app/.baileys_data
+  #   environment:
+  #     - DETECT_OWN_MESSAGES=false
+  #     - INCOMING_MESSAGES_MODE=all
+  #     - INCOMING_MESSAGE_LOG_LEVEL=FULL
+  #     # - ALLOWED_NUMBERS=40741234567
+  #     # - ALLOWED_GROUPS=Family Group,Work Team
