@@ -19,7 +19,7 @@ FROM node:22-slim
 WORKDIR /usr/src/app
 
 COPY --from=builder /usr/src/app/node_modules ./node_modules
-COPY index.js run.sh ./
+COPY package*.json index.js run.sh ./
 
 RUN chmod +x run.sh
 
