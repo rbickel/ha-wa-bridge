@@ -1,8 +1,11 @@
 # Node.js
 node_modules/
 wa-bridge/node_modules/
+wa-bridge-baileys/node_modules/
 .wwebjs_auth/
 .wwebjs_cache/
+.baileys_data/
+.baileys_auth/
 
 # Python
 __pycache__/
