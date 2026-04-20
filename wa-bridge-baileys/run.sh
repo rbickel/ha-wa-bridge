@@ -9,5 +9,5 @@ else
     export WA_DATA_PATH=./.baileys_data
 fi
 
-echo "Starting WhatsApp Baileys Bridge…"
+echo "Starting WhatsApp Baileys Bridge..."
 exec npm start

@@ -131,7 +131,9 @@ function reportMemory() {
         `  External=${Math.round(m.external / 1024 / 1024)}MB`
     );
 }
-setInterval(reportMemory, 60_000);
+// Store the reference so it can be cancelled if needed (e.g. in tests)
+const memoryReportInterval = setInterval(reportMemory, 60_000);
+memoryReportInterval.unref(); // Don't prevent process exit
 
 // ── WebSocket server ─────────────────────────────────────────────────────────
 const PORT = parseInt(process.env.PORT || '3000', 10);
@@ -461,7 +463,9 @@ async function startBaileys() {
 
             if (loggedOut) {
                 console.log('Logged out. Clearing auth state...');
-                try { fs.rmSync(AUTH_DIR, { recursive: true, force: true }); } catch {}
+                try { fs.rmSync(AUTH_DIR, { recursive: true, force: true }); } catch (rmErr) {
+                    console.error('Failed to remove auth directory:', rmErr.message);
+                }
                 broadcast({ type: 'status', status: 'auth_failure' });
             }
             // Exit so Docker / HA Supervisor restarts the container
@@ -645,6 +649,9 @@ wss.on('connection', (ws) => {
                 if (Array.isArray(targets) && targets.length > 0) {
                     console.log(`Broadcasting message to ${targets.length} targets.`);
                     for (const target of targets) {
+                        // Pass target as both number and group_name: resolveChatId will
+                        // first try to match a group by name, then fall back to treating
+                        // it as a phone number – intentional, mirrors the original bridge.
                         await handleSendMessage(target, text, target, null, media);
                     }
                 } else {
