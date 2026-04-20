@@ -1,5 +1,5 @@
 name: "WhatsApp Bridge Baileys"
-version: "2.0.2"
+version: "2.0.3"
 slug: "ha-wa-bridge-baileys"
 description: "WhatsApp Web Bridge for Home Assistant"
 url: "https://github.com/raulpetruta/ha-wa-bridge"
