@@ -123,12 +123,20 @@ function logIncomingData(type, data, rawObj) {
 }
 
 // ── Memory reporter (used to compare against the original bridge) ────────────
+let lastMemorySignature = null;
 function reportMemory() {
     const m = process.memoryUsage();
+    const rssMb = Math.round(m.rss / 1024 / 1024);
+    const heapUsedMb = Math.round(m.heapUsed / 1024 / 1024);
+    const heapTotalMb = Math.round(m.heapTotal / 1024 / 1024);
+    const externalMb = Math.round(m.external / 1024 / 1024);
+    const memorySignature = `${rssMb}|${heapUsedMb}|${heapTotalMb}|${externalMb}`;
+    if (memorySignature === lastMemorySignature) return;
+    lastMemorySignature = memorySignature;
     console.log(
-        `[MEMORY] RSS=${Math.round(m.rss / 1024 / 1024)}MB` +
-        `  Heap=${Math.round(m.heapUsed / 1024 / 1024)}/${Math.round(m.heapTotal / 1024 / 1024)}MB` +
-        `  External=${Math.round(m.external / 1024 / 1024)}MB`
+        `[MEMORY] RSS=${rssMb}MB` +
+        `  Heap=${heapUsedMb}/${heapTotalMb}MB` +
+        `  External=${externalMb}MB`
     );
 }
 // Store the reference so it can be cancelled if needed (e.g. in tests)
