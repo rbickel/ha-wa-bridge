@@ -1,6 +1,6 @@
 """Tests for WhatsApp Bridge client reconnection logic."""
 import pytest
-from unittest.mock import Mock, AsyncMock, patch
+from unittest.mock import Mock
 from custom_components.whatsapp.client import (
     WhatsAppBridge,
     next_delay,
