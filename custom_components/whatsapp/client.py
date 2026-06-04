@@ -1,11 +1,26 @@
 import asyncio
 import json
 import logging
+import random
 import aiohttp
+from typing import Callable, Optional
 
 from homeassistant.core import HomeAssistant
 
 _LOGGER = logging.getLogger(__name__)
+
+# Reconnection constants
+BASE_DELAY = 5  # seconds
+MAX_DELAY = 300  # 5 minutes ceiling
+JITTER = 0.2  # ±20%
+MAX_RETRIES = 20  # Max consecutive failures before stopping
+
+
+def next_delay(attempt: int) -> float:
+    """Calculate next reconnection delay with exponential backoff and jitter."""
+    delay = min(BASE_DELAY * (2 ** attempt), MAX_DELAY)
+    return delay * (1 + random.uniform(-JITTER, JITTER))
+
 
 class WhatsAppBridge:
     def __init__(self, hass: HomeAssistant, host: str):
@@ -15,11 +30,44 @@ class WhatsAppBridge:
         self._ws = None
         self._running = False
         self.connection_status = "disconnected"
+        self._connection_attempt = 0
+        self._consecutive_failures = 0
+        self._last_error_type = None
+        self._max_retries_exceeded = False
+        self._state_callback: Optional[Callable] = None
+
+    def set_state_callback(self, callback: Callable):
+        """Set callback for connection state changes."""
+        self._state_callback = callback
+
+    def _classify_error(self, error: Exception) -> tuple[str, str]:
+        """Classify connection errors and return (error_type, log_level)."""
+        error_str = str(error)
+
+        if "104" in error_str or "Connection reset by peer" in error_str:
+            return ("connection_reset", "warning")  # Bridge crashed/restarting
+        elif "111" in error_str or "Connection refused" in error_str:
+            return ("connection_refused", "error")  # Bridge not running
+        elif "Server disconnected" in error_str or "disconnected" in error_str.lower():
+            return ("clean_disconnect", "info")  # Intentional restart
+        else:
+            return ("unknown", "error")  # Unknown error
+
+    async def _notify_state_change(self):
+        """Notify state callback if registered."""
+        if self._state_callback:
+            await self._state_callback()
 
     async def start(self, event_callback=None):
         self._running = True
-        
+
         while self._running:
+            if self._max_retries_exceeded:
+                # Stop retrying if max retries exceeded
+                _LOGGER.debug("Max retries exceeded, waiting for manual intervention")
+                await asyncio.sleep(30)  # Check periodically if reset
+                continue
+
             try:
                 if not self._session:
                     self._session = aiohttp.ClientSession()
@@ -27,9 +75,22 @@ class WhatsAppBridge:
                 _LOGGER.info("Connecting to WhatsApp Bridge at %s", self.host)
                 async with self._session.ws_connect(self.host) as ws:
                     self._ws = ws
+
+                    # Connection successful - reset failure tracking
+                    attempts_used = self._consecutive_failures
+                    self._consecutive_failures = 0
+                    self._connection_attempt = 0
+                    self._last_error_type = None
+                    self._max_retries_exceeded = False
+
                     self.connection_status = "connected"
-                    _LOGGER.info("Connected to WhatsApp Bridge")
-                    
+                    await self._notify_state_change()
+
+                    if attempts_used > 0:
+                        _LOGGER.info("Connected to WhatsApp Bridge after %d attempts", attempts_used + 1)
+                    else:
+                        _LOGGER.info("Connected to WhatsApp Bridge")
+
                     async for msg in ws:
                         if msg.type == aiohttp.WSMsgType.TEXT:
                             data = json.loads(msg.data)
@@ -38,14 +99,64 @@ class WhatsAppBridge:
                         elif msg.type == aiohttp.WSMsgType.ERROR:
                             _LOGGER.error("WhatsApp Bridge connection error: %s", ws.exception())
                             break
+
             except Exception as e:
-                 _LOGGER.error("Error connecting to WhatsApp Bridge: %s", e)
-                 self.connection_status = "error"
-            
-            if self._running:
+                self._consecutive_failures += 1
+                error_type, log_level = self._classify_error(e)
+
+                # Log first occurrence at appropriate level, subsequent at DEBUG
+                is_first_in_streak = (error_type != self._last_error_type or self._consecutive_failures == 1)
+                self._last_error_type = error_type
+
+                if is_first_in_streak:
+                    if log_level == "error":
+                        _LOGGER.error("Error connecting to WhatsApp Bridge: %s", e)
+                    elif log_level == "warning":
+                        _LOGGER.warning("Error connecting to WhatsApp Bridge: %s", e)
+                    else:
+                        _LOGGER.info("Error connecting to WhatsApp Bridge: %s", e)
+                else:
+                    _LOGGER.debug("Error connecting to WhatsApp Bridge (attempt %d): %s",
+                                 self._consecutive_failures, e)
+
+                self.connection_status = "error"
+
+                # Check if max retries exceeded
+                if self._consecutive_failures >= MAX_RETRIES:
+                    _LOGGER.error(
+                        "Max retry limit (%d) exceeded. Stopping automatic reconnection. "
+                        "Please check the bridge service and restart the integration.",
+                        MAX_RETRIES
+                    )
+                    self._max_retries_exceeded = True
+                    self.connection_status = "unavailable"
+                    await self._notify_state_change()
+                    # Create repair issue
+                    from homeassistant.helpers import issue_registry as ir
+                    ir.async_create_issue(
+                        self.hass,
+                        "whatsapp",
+                        "bridge_connection_failed",
+                        is_fixable=False,
+                        severity=ir.IssueSeverity.ERROR,
+                        translation_key="bridge_connection_failed",
+                        translation_placeholders={
+                            "host": self.host,
+                            "attempts": str(MAX_RETRIES),
+                        },
+                    )
+                    continue
+
+            if self._running and not self._max_retries_exceeded:
                 self.connection_status = "reconnecting"
-                _LOGGER.info("Reconnecting in 5 seconds...")
-                await asyncio.sleep(5)
+                await self._notify_state_change()
+
+                # Calculate delay with exponential backoff
+                delay = next_delay(self._connection_attempt)
+                _LOGGER.debug("Reconnecting in %.1f seconds...", delay)
+                self._connection_attempt += 1
+
+                await asyncio.sleep(delay)
 
     async def stop(self):
         self._running = False
@@ -53,6 +164,18 @@ class WhatsAppBridge:
             await self._ws.close()
         if self._session:
             await self._session.close()
+
+    def reset_retry_limit(self):
+        """Reset the max retry exceeded flag to allow reconnection attempts."""
+        if self._max_retries_exceeded:
+            _LOGGER.info("Resetting retry limit, will resume reconnection attempts")
+            self._max_retries_exceeded = False
+            self._consecutive_failures = 0
+            self._connection_attempt = 0
+            self._last_error_type = None
+            # Dismiss repair issue
+            from homeassistant.helpers import issue_registry as ir
+            ir.async_delete_issue(self.hass, "whatsapp", "bridge_connection_failed")
 
     async def send_message(self, number: str | None, message: str, group_name: str | None = None, group_id: str | None = None, media: dict | None = None):
         """Send a message via the bridge."""
