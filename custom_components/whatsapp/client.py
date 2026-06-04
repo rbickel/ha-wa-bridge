@@ -111,10 +111,9 @@ class WhatsAppBridge:
                 self._consecutive_failures += 1
                 error_type, log_level = self._classify_error(e)
 
-                # Log first occurrence at appropriate level, subsequent at DEBUG
-                is_first_in_streak = (error_type != self._last_error_type or self._consecutive_failures == 1)
+                # Log only the first failure in a streak at a high level; subsequent retries are DEBUG
+                is_first_in_streak = (self._consecutive_failures == 1)
                 self._last_error_type = error_type
-
                 if is_first_in_streak:
                     if log_level == "error":
                         _LOGGER.error("Error connecting to WhatsApp Bridge: %s", e)
