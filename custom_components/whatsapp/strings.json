@@ -23,5 +23,11 @@
     "abort": {
       "already_configured": "Device is already configured"
     }
+  },
+  "issues": {
+    "bridge_connection_failed": {
+      "title": "WhatsApp Bridge Connection Failed",
+      "description": "Failed to connect to the WhatsApp Bridge at {host} after {attempts} attempts.\n\nPlease check:\n1. The bridge service is running\n2. The bridge is accessible at {host}\n3. There are no network issues\n\nOnce the issue is resolved, restart this integration to resume automatic reconnection."
+    }
   }
 }

@@ -22,7 +22,7 @@ from .client import WhatsAppBridge
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS: list[Platform] = []
+PLATFORMS: list[Platform] = [Platform.BINARY_SENSOR]
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     """Set up the WhatsApp Integration component."""
@@ -33,9 +33,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data.setdefault(DOMAIN, {})
 
     host = entry.data.get(CONF_HOST, DEFAULT_HOST)
-    
+
     bridge = WhatsAppBridge(hass, host)
     hass.data[DOMAIN][entry.entry_id] = bridge
+
+    # Reset retry limit on integration restart
+    bridge.reset_retry_limit()
 
     async def bridge_event_callback(msg):
         """Handle incoming messages from the bridge."""
@@ -82,6 +85,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
              if status == 'authenticated' or status == 'ready':
                  notification_id = f"whatsapp_qr_{entry.entry_id}"
                  persistent_notification.async_dismiss(hass, notification_id)
+
+    # Set up platforms
+    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
     entry.async_create_background_task(hass, bridge.start(bridge_event_callback), "whatsapp_bridge_connect")
 
@@ -236,6 +242,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
-    bridge = hass.data[DOMAIN].pop(entry.entry_id)
-    await bridge.stop()
-    return True
+    # Unload platforms
+    unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+
+    if unload_ok:
+        bridge = hass.data[DOMAIN].pop(entry.entry_id)
+        await bridge.stop()
+
+    return unload_ok
