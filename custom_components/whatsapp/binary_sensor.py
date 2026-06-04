@@ -71,7 +71,7 @@ class WhatsAppBridgeConnectionSensor(BinarySensorEntity):
         return self._bridge.connection_status != "unavailable"
 
     @property
-    def extra_state_attributes(self) -> dict[str, any]:
+    def extra_state_attributes(self) -> dict[str, object]:
         """Return additional state attributes."""
         return {
             "connection_status": self._bridge.connection_status,
