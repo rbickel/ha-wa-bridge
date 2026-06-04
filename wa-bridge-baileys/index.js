@@ -124,6 +124,8 @@ function logIncomingData(type, data, rawObj) {
 
 // ── Memory reporter (used to compare against the original bridge) ────────────
 let lastMemorySignature = null;
+let memoryCheckCount = 0;
+
 function reportMemory() {
     const m = process.memoryUsage();
     const rssMb = Math.round(m.rss / 1024 / 1024);
@@ -131,13 +133,25 @@ function reportMemory() {
     const heapTotalMb = Math.round(m.heapTotal / 1024 / 1024);
     const externalMb = Math.round(m.external / 1024 / 1024);
     const memorySignature = `${rssMb}|${heapUsedMb}|${heapTotalMb}|${externalMb}`;
-    if (memorySignature === lastMemorySignature) return;
-    lastMemorySignature = memorySignature;
-    console.log(
-        `[MEMORY] RSS=${rssMb}MB` +
-        `  Heap=${heapUsedMb}/${heapTotalMb}MB` +
-        `  External=${externalMb}MB`
-    );
+
+    memoryCheckCount++;
+
+    // Log every time, but include check count for monitoring
+    if (memorySignature !== lastMemorySignature || memoryCheckCount % 10 === 0) {
+        const uptime = Math.round(process.uptime());
+        console.log(
+            `[MEMORY #${memoryCheckCount}] RSS=${rssMb}MB` +
+            `  Heap=${heapUsedMb}/${heapTotalMb}MB` +
+            `  External=${externalMb}MB` +
+            `  Uptime=${uptime}s`
+        );
+        lastMemorySignature = memorySignature;
+    }
+
+    // Warn if memory usage is high
+    if (rssMb > 800) {
+        console.warn(`[MEMORY WARNING] RSS usage is high: ${rssMb}MB (limit: 1GB)`);
+    }
 }
 // Store the reference so it can be cancelled if needed (e.g. in tests)
 const memoryReportInterval = setInterval(reportMemory, 60_000);
@@ -153,11 +167,22 @@ let lastQr = null;
 /** @type {ReturnType<typeof makeWASocket> | null} */
 let sock = null;
 
+// Track connected clients for diagnostics
+let connectedClients = 0;
+
 function broadcast(data) {
     const payload = JSON.stringify(data);
+    let sentCount = 0;
     wss.clients.forEach(ws => {
-        if (ws.readyState === 1) ws.send(payload);
+        if (ws.readyState === 1) {
+            ws.send(payload);
+            sentCount++;
+        }
     });
+    // Log broadcasts only for important events
+    if (data.type === 'status' || data.type === 'qr') {
+        console.log(`Broadcast ${data.type} to ${sentCount} client(s)`);
+    }
 }
 
 // ── Group metadata cache ─────────────────────────────────────────────────────
@@ -441,6 +466,7 @@ async function startBaileys() {
         }
 
         if (connection === 'connecting') {
+            console.log('WhatsApp connection status: connecting...');
             broadcast({ type: 'status', status: 'initializing' });
         }
 
@@ -466,7 +492,21 @@ async function startBaileys() {
         if (connection === 'close') {
             const code = new Boom(lastDisconnect?.error)?.output?.statusCode;
             const loggedOut = code === DisconnectReason.loggedOut;
-            console.log(`Connection closed – reason code: ${code}. Logged out: ${loggedOut}`);
+            const restartRequired = code === DisconnectReason.restartRequired;
+            const connectionLost = code === DisconnectReason.connectionLost;
+            const timedOut = code === DisconnectReason.timedOut;
+
+            // Log detailed disconnect reason
+            console.log(`Connection closed – reason code: ${code}`);
+            console.log(`  Logged out: ${loggedOut}`);
+            console.log(`  Restart required: ${restartRequired}`);
+            console.log(`  Connection lost: ${connectionLost}`);
+            console.log(`  Timed out: ${timedOut}`);
+
+            if (lastDisconnect?.error) {
+                console.error('Disconnect error details:', lastDisconnect.error);
+            }
+
             isReady = false;
 
             if (loggedOut) {
@@ -476,6 +516,11 @@ async function startBaileys() {
                 }
                 broadcast({ type: 'status', status: 'auth_failure' });
             }
+
+            // Log memory before exit for diagnostic purposes
+            reportMemory();
+            console.log(`Exiting with code 1 to trigger container restart (uptime: ${Math.round(process.uptime())}s)`);
+
             // Exit so Docker / HA Supervisor restarts the container
             process.exit(1);
         }
@@ -623,7 +668,8 @@ async function startBaileys() {
 
 // ── WebSocket command handler ─────────────────────────────────────────────────
 wss.on('connection', (ws) => {
-    console.log('New client connected');
+    connectedClients++;
+    console.log(`New client connected (total clients: ${connectedClients})`);
 
     if (isReady) {
         ws.send(JSON.stringify({ type: 'status', status: 'ready' }));
@@ -632,6 +678,21 @@ wss.on('connection', (ws) => {
     } else {
         ws.send(JSON.stringify({ type: 'status', status: 'initializing' }));
     }
+
+    // Set up ping/pong for connection health monitoring
+    ws.isAlive = true;
+    ws.on('pong', () => {
+        ws.isAlive = true;
+    });
+
+    ws.on('close', () => {
+        connectedClients--;
+        console.log(`Client disconnected (remaining clients: ${connectedClients})`);
+    });
+
+    ws.on('error', (err) => {
+        console.error('WebSocket client error:', err.message);
+    });
 
     ws.on('message', async (raw) => {
         let data;
@@ -686,6 +747,19 @@ wss.on('connection', (ws) => {
         }
     });
 });
+
+// WebSocket health check: ping clients every 30 seconds
+const wsHealthInterval = setInterval(() => {
+    wss.clients.forEach(ws => {
+        if (ws.isAlive === false) {
+            console.log('Terminating unresponsive WebSocket client');
+            return ws.terminate();
+        }
+        ws.isAlive = false;
+        ws.ping();
+    });
+}, 30_000);
+wsHealthInterval.unref();
 
 // ── Bootstrap ─────────────────────────────────────────────────────────────────
 console.log('Initializing WhatsApp Baileys bridge (no browser required)…');

@@ -71,6 +71,9 @@ const wss = new WebSocketServer({ port: PORT });
 
 console.log(`WebSocket server started on port ${PORT}`);
 
+// Track connected clients for diagnostics
+let connectedClients = 0;
+
 // Initialize WhatsApp Client
 const client = new Client({
     authStrategy: new LocalAuth({
@@ -105,7 +108,8 @@ let isReady = false;
 
 // WebSocket Connection Handler
 wss.on('connection', (ws) => {
-    console.log('New client connected');
+    connectedClients++;
+    console.log(`New client connected (total clients: ${connectedClients})`);
 
     // Send current state to new client
     if (isReady) {
@@ -115,6 +119,21 @@ wss.on('connection', (ws) => {
     } else {
         ws.send(JSON.stringify({ type: 'status', status: 'initializing' }));
     }
+
+    // Set up ping/pong for connection health monitoring
+    ws.isAlive = true;
+    ws.on('pong', () => {
+        ws.isAlive = true;
+    });
+
+    ws.on('close', () => {
+        connectedClients--;
+        console.log(`Client disconnected (remaining clients: ${connectedClients})`);
+    });
+
+    ws.on('error', (err) => {
+        console.error('WebSocket client error:', err.message);
+    });
 
     // Handle incoming messages from HA
     ws.on('message', async (message) => {
@@ -155,6 +174,18 @@ wss.on('connection', (ws) => {
         }
     });
 });
+
+// WebSocket health check: ping clients every 30 seconds
+const wsHealthInterval = setInterval(() => {
+    wss.clients.forEach(ws => {
+        if (ws.isAlive === false) {
+            console.log('Terminating unresponsive WebSocket client');
+            return ws.terminate();
+        }
+        ws.isAlive = false;
+        ws.ping();
+    });
+}, 30_000);
 
 async function resolveChatId(number, group_name, group_id) {
     let chatId = number;
@@ -329,11 +360,17 @@ async function handleSetGroupPicture(ws, group_id, media) {
 
 // Broadcast helper
 function broadcast(data) {
+    let sentCount = 0;
     wss.clients.forEach(client => {
         if (client.readyState === 1) { // OPEN
             client.send(JSON.stringify(data));
+            sentCount++;
         }
     });
+    // Log broadcasts only for important events
+    if (data.type === 'status' || data.type === 'qr') {
+        console.log(`Broadcast ${data.type} to ${sentCount} client(s)`);
+    }
 }
 
 // WhatsApp Client Events
@@ -344,7 +381,7 @@ client.on('qr', (qr) => {
     qrcode.toString(qr, { type: 'terminal', small: true }, function (err, url) {
         if (!err) console.log(url);
     });
-    
+
     broadcast({ type: 'qr', data: qr });
 });
 
@@ -353,6 +390,7 @@ client.on('ready', () => {
     isReady = true;
     lastQr = null;
     broadcast({ type: 'status', status: 'ready' });
+    console.log(`[INFO] Client ready. Uptime: ${Math.round(process.uptime())}s`);
 });
 
 client.on('authenticated', () => {
@@ -363,6 +401,21 @@ client.on('authenticated', () => {
 client.on('auth_failure', msg => {
     console.error('AUTHENTICATION FAILURE', msg);
     broadcast({ type: 'status', status: 'auth_failure' });
+    // Log diagnostic info before potential restart
+    const m = process.memoryUsage();
+    const rssMb = Math.round(m.rss / 1024 / 1024);
+    console.log(`[MEMORY] RSS=${rssMb}MB at auth failure (uptime: ${Math.round(process.uptime())}s)`);
+});
+
+// Add disconnect handler for better diagnostics
+client.on('disconnected', (reason) => {
+    console.log('WhatsApp Client disconnected. Reason:', reason);
+    isReady = false;
+    // Log diagnostic info
+    const m = process.memoryUsage();
+    const rssMb = Math.round(m.rss / 1024 / 1024);
+    console.log(`[MEMORY] RSS=${rssMb}MB at disconnect (uptime: ${Math.round(process.uptime())}s)`);
+    console.log('Container will restart due to "restart: unless-stopped" policy');
 });
 
 client.on('vote_update', async vote => {

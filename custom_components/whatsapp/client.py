@@ -2,10 +2,16 @@ import asyncio
 import json
 import logging
 import aiohttp
+from datetime import datetime
 
 from homeassistant.core import HomeAssistant
 
 _LOGGER = logging.getLogger(__name__)
+
+# Connection retry configuration
+MIN_RETRY_DELAY = 5  # seconds
+MAX_RETRY_DELAY = 300  # 5 minutes max
+BACKOFF_MULTIPLIER = 2.0
 
 class WhatsAppBridge:
     def __init__(self, hass: HomeAssistant, host: str):
@@ -15,21 +21,43 @@ class WhatsAppBridge:
         self._ws = None
         self._running = False
         self.connection_status = "disconnected"
+        self._retry_delay = MIN_RETRY_DELAY
+        self._consecutive_failures = 0
+        self._last_successful_connection = None
+        self._total_reconnects = 0
+        self._connection_start_time = None
 
     async def start(self, event_callback=None):
         self._running = True
-        
+
         while self._running:
             try:
                 if not self._session:
                     self._session = aiohttp.ClientSession()
 
-                _LOGGER.info("Connecting to WhatsApp Bridge at %s", self.host)
-                async with self._session.ws_connect(self.host) as ws:
+                _LOGGER.info("Connecting to WhatsApp Bridge at %s (attempt after %d failures)",
+                           self.host, self._consecutive_failures)
+
+                self._connection_start_time = datetime.now()
+                async with self._session.ws_connect(
+                    self.host,
+                    heartbeat=30,  # Send ping every 30 seconds to keep connection alive
+                    timeout=aiohttp.ClientTimeout(total=None, connect=10, sock_read=60)
+                ) as ws:
                     self._ws = ws
                     self.connection_status = "connected"
-                    _LOGGER.info("Connected to WhatsApp Bridge")
-                    
+
+                    # Reset failure tracking on successful connection
+                    self._consecutive_failures = 0
+                    self._retry_delay = MIN_RETRY_DELAY
+                    self._last_successful_connection = datetime.now()
+
+                    if self._total_reconnects > 0:
+                        _LOGGER.info("Reconnected to WhatsApp Bridge (total reconnects: %d)",
+                                   self._total_reconnects)
+                    else:
+                        _LOGGER.info("Connected to WhatsApp Bridge")
+
                     async for msg in ws:
                         if msg.type == aiohttp.WSMsgType.TEXT:
                             data = json.loads(msg.data)
@@ -38,14 +66,46 @@ class WhatsAppBridge:
                         elif msg.type == aiohttp.WSMsgType.ERROR:
                             _LOGGER.error("WhatsApp Bridge connection error: %s", ws.exception())
                             break
+                        elif msg.type == aiohttp.WSMsgType.CLOSED:
+                            connection_duration = (datetime.now() - self._connection_start_time).total_seconds()
+                            _LOGGER.warning("WebSocket closed by server after %.1f seconds", connection_duration)
+                            break
+                        elif msg.type == aiohttp.WSMsgType.CLOSING:
+                            _LOGGER.info("WebSocket is closing")
+                            break
+
+            except aiohttp.ClientConnectorError as e:
+                self._consecutive_failures += 1
+                _LOGGER.error("Failed to connect to WhatsApp Bridge at %s (connection refused): %s",
+                            self.host, e)
+                self.connection_status = "error"
+
+            except asyncio.TimeoutError:
+                self._consecutive_failures += 1
+                _LOGGER.error("Connection to WhatsApp Bridge timed out")
+                self.connection_status = "error"
+
             except Exception as e:
-                 _LOGGER.error("Error connecting to WhatsApp Bridge: %s", e)
-                 self.connection_status = "error"
-            
+                self._consecutive_failures += 1
+                _LOGGER.error("Error connecting to WhatsApp Bridge: %s", e, exc_info=True)
+                self.connection_status = "error"
+
             if self._running:
+                self._total_reconnects += 1
                 self.connection_status = "reconnecting"
-                _LOGGER.info("Reconnecting in 5 seconds...")
-                await asyncio.sleep(5)
+
+                # Exponential backoff with max delay cap
+                if self._consecutive_failures > 1:
+                    self._retry_delay = min(
+                        self._retry_delay * BACKOFF_MULTIPLIER,
+                        MAX_RETRY_DELAY
+                    )
+
+                _LOGGER.info(
+                    "Reconnecting in %d seconds... (consecutive failures: %d, total reconnects: %d)",
+                    int(self._retry_delay), self._consecutive_failures, self._total_reconnects
+                )
+                await asyncio.sleep(self._retry_delay)
 
     async def stop(self):
         self._running = False

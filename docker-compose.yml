@@ -19,8 +19,18 @@ services:
 #      - DETECT_OWN_MESSAGES=true # Set to true to allow the bridge to detect and broadcast messages sent by your own authenticated WhatsApp account
 #      - INCOMING_MESSAGES_MODE=all # Set to 'all' to allow all messages, or 'numbers_only' to allow only messages from specific numbers, or 'groups_only' to allow only messages from specific groups
 #      - INCOMING_MESSAGE_LOG_LEVEL=FULL # FULL = log entire payload (default), COMPACT = sender & type only, NONE = no incoming message logs
-      # - ALLOWED_NUMBERS=40741234567 # Set to allow only messages from specific numbers
-      # - ALLOWED_GROUPS=Family Group,Work Team # Set to allow only messages from specific groups
+#      # - ALLOWED_NUMBERS=40741234567 # Set to allow only messages from specific numbers
+#      # - ALLOWED_GROUPS=Family Group,Work Team # Set to allow only messages from specific groups
+#    # Memory limits to prevent OOM crashes
+#    mem_limit: 2g
+#    mem_reservation: 512m
+#    # Health check to detect if bridge is unresponsive
+#    healthcheck:
+#      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000', (r) => r.statusCode === 404 ? process.exit(0) : process.exit(1))"]
+#      interval: 60s
+#      timeout: 10s
+#      retries: 3
+#      start_period: 30s
 
   # ── Option B: Baileys bridge (no Puppeteer / no Chromium) ───────────────────
   # Prototype – same WebSocket API as Option A so HA integration works with
@@ -42,3 +52,14 @@ services:
       - INCOMING_MESSAGE_LOG_LEVEL=FULL
       # - ALLOWED_NUMBERS=40741234567
       # - ALLOWED_GROUPS=Family Group,Work Team
+    # Memory limits to prevent OOM crashes
+    mem_limit: 1g
+    mem_reservation: 256m
+    # Health check to detect if bridge is unresponsive
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000', (r) => r.statusCode === 404 ? process.exit(0) : process.exit(1))"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
