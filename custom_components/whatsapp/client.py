@@ -90,17 +90,18 @@ class WhatsAppBridge:
                         from homeassistant.helpers import issue_registry as ir
                         ir.async_delete_issue(self.hass, "whatsapp", "bridge_connection_failed")
 
-                    self.connection_status = "connected"
-                    await self._notify_state_change()
-
                     if attempts_used > 0:
-                        _LOGGER.info("Connected to WhatsApp Bridge after %d attempts", attempts_used + 1)
+                        _LOGGER.info("WebSocket connected to WhatsApp Bridge after %d attempts, waiting for ready", attempts_used + 1)
                     else:
-                        _LOGGER.info("Connected to WhatsApp Bridge")
+                        _LOGGER.info("WebSocket connected to WhatsApp Bridge, waiting for ready")
 
                     async for msg in ws:
                         if msg.type == aiohttp.WSMsgType.TEXT:
                             data = json.loads(msg.data)
+                            if data.get("type") == "status" and data.get("status") == "ready":
+                                self.connection_status = "connected"
+                                await self._notify_state_change()
+                                _LOGGER.info("WhatsApp Bridge is ready")
                             if event_callback:
                                 await event_callback(data)
                         elif msg.type == aiohttp.WSMsgType.ERROR:
