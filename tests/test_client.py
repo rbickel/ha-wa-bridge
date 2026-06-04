@@ -17,8 +17,8 @@ class TestExponentialBackoff:
     def test_first_attempt_delay(self):
         """Test delay for first reconnection attempt."""
         delay = next_delay(0)
-        # First attempt should be BASE_DELAY ± JITTER
-        assert BASE_DELAY * (1 - JITTER) <= delay <= BASE_DELAY * (1 + JITTER)
+        # First attempt should never be shorter than BASE_DELAY
+        assert BASE_DELAY <= delay <= BASE_DELAY * (1 + JITTER)
 
     def test_exponential_growth(self):
         """Test that delay grows exponentially."""
