@@ -37,7 +37,7 @@ class TestExponentialBackoff:
         """Test that delay never exceeds MAX_DELAY."""
         # Very high attempt number
         delay = next_delay(100)
-        assert delay <= MAX_DELAY * (1 + JITTER)
+        assert delay <= MAX_DELAY
 
     def test_jitter_bounds(self):
         """Test that jitter stays within ±20%."""
