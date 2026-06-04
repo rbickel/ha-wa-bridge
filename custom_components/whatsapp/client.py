@@ -18,8 +18,9 @@ MAX_RETRIES = 20  # Max consecutive failures before stopping
 
 def next_delay(attempt: int) -> float:
     """Calculate next reconnection delay with exponential backoff and jitter."""
-    delay = min(BASE_DELAY * (2 ** attempt), MAX_DELAY)
-    return delay * (1 + random.uniform(-JITTER, JITTER))
+    base = min(BASE_DELAY * (2 ** attempt), MAX_DELAY)
+    jittered = base * (1 + random.uniform(-JITTER, JITTER))
+    return max(BASE_DELAY, min(jittered, MAX_DELAY))
 
 
 class WhatsAppBridge:
