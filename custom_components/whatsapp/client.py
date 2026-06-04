@@ -78,10 +78,16 @@ class WhatsAppBridge:
 
                     # Connection successful - reset failure tracking
                     attempts_used = self._consecutive_failures
+                    was_max_retries_exceeded = self._max_retries_exceeded
                     self._consecutive_failures = 0
                     self._connection_attempt = 0
                     self._last_error_type = None
                     self._max_retries_exceeded = False
+
+                    # Dismiss repair issue if it was raised
+                    if was_max_retries_exceeded:
+                        from homeassistant.helpers import issue_registry as ir
+                        ir.async_delete_issue(self.hass, "whatsapp", "bridge_connection_failed")
 
                     self.connection_status = "connected"
                     await self._notify_state_change()
